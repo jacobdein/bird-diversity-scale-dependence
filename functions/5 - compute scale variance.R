@@ -161,6 +161,19 @@ compute_scale_variance <- function(hbins_estD, hbins) {
            sum_squares = as.numeric(ss)
     )
   
-  sv_result <- list(sve = sve, svc = svc_p, ss = ss, tss = tss, degf = degf)
+  # define function to rejoin geometry to estD values for a specified level
+  join_estD_value_geometry <- function(leveln) {
+    return(
+      df %>% 
+        select(!!sym(glue("id_level{leveln}")), !!sym(glue("estD_level{leveln}"))) %>% 
+        rename(id = !!sym(glue("id_level{leveln}")), estD = !!sym(glue("estD_level{leveln}"))) %>% 
+        inner_join(hbins, ., by = c("id" = "id"), multiple="any", keep = FALSE, unmatched = "drop")
+    )
+  }
+  # compute scale variance elements for all levels
+  estD_values <- levels %>% map_df(join_estD_value_geometry) %>% st_as_sf()
+  
+  sv_result <- list(sve = sve, svc = svc_p, ss = ss, tss = tss, degf = degf, estD_values = estD_values)
+  
   return(sv_result)
 }
