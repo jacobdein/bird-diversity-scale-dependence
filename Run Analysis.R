@@ -10,15 +10,15 @@ library(arcgisbinding)
 
 ### specify run parameters ###
 # specify an identifier to id the results from this set of parameters
-run_id <- "R99"
+run_id <- "R22"
 # specify a name for the area of interest (aoi)
 run_location <- "London"
 # specify path to aoi geometry
 run_aoi <- "../data/GreaterLondon.geojson"
 # specify size in meters of largest scale
-run_start_scale_m <- 750
+run_start_scale_m <- 500
 # specify the number of levels (scales)
-run_levels <- 7
+run_levels <- 8
 # specify a full name for this set of parameters
 run <- glue("{run_id} - {run_location} {run_start_scale_m}m {run_levels}L")
 # specify the input observations
@@ -89,16 +89,15 @@ source("functions/3 - estimate diversity.R")
 
 # estimate species diversity
 q <- 2
-hbins_estD <- estimate_diversity(dataset)
+dataset$hbins_estD <- estimate_diversity(dataset)
 # specify estimated diversity data
-hbins_estD <- hbins_estD %>% mutate(estD = !!sym(glue("qD_{q}")))
+dataset$hbins_estD <- dataset$hbins_estD %>% mutate(estD = !!sym(glue("qD_{q}")))
 
 # save results
-dataset$hbins_estD <- hbins_estD
 dataset$hbins_estD %>% saveRDS(file.path(output_dir,"hbins_estD.rds"))
 
 # convert bin polygons to points (at centroid)
-estD_pts <- hbins_estD %>% 
+estD_pts <- dataset$hbins_estD %>% 
   filter(level==1) %>%
   st_centroid()
 
@@ -110,11 +109,11 @@ if (!dir.exists(exp_path)) {
 estD_pts %>% drop_na(estD) %>% st_write(file.path(exp_path,"estD_pts.geojson"))
 if(arcgis) {
   write_arcgis(file.path(gdb, run_id, glue("{run_id}_estD_pts")), estD_pts)
-  # additionally export records with nLists >= 5
+  # additionally export records with nLists > 5
   write_arcgis(file.path(gdb, 
                          run_id, 
                          glue("{run_id}_estD_pts_gt5")), 
-               estD_pts %>% drop_na(estD) %>% filter(nLists >= 5))
+               estD_pts %>% drop_na(estD) %>% filter(nLists > 5))
 }
 
 
@@ -124,11 +123,19 @@ if(arcgis) {
 # ordinary kriging (gstat)
 source("functions/4a - ordinary kriging.R")
 
-OK_result <- execute_OK(hbins_estD = dataset$hbins_estD %>% filter(nLists >= 5), 
+OK_result <- execute_OK(hbins_estD = dataset$hbins_estD %>% filter(nLists > 5), 
                         hbins = dataset$hbins,
                         lag_size = run_start_scale_m) %>% 
                         # bind result to full hbin set
-                        bind_rows(dataset$hbins_estD %>% filter(level > 1))
+                        bind_rows(dataset$hbins_estD %>% filter(level > 1)) %>% 
+                        dplyr::mutate(estD = var1.pred)
+OK_result$geometry <- hbins$geometry # change geometry from point to polygons
+
+# save ordinary kriging result
+OK_result %>% st_write(file.path(output_dir, "geojson", "OK_result.geojson"))
+if (arcgis) {
+  write_arcgis(file.path(gdb, run_id, glue("{run_id}_OK_result")), OK_result)
+}
 
 # empirical Bayesian kriging (ArcGIS)
 if(arcgis) {
@@ -140,9 +147,9 @@ if(arcgis) {
          file.path(gdb, run_id, glue("{run_id}_EBK")), 
          "--validate")
   # run a python script to execute empirical Bayesian kriging in ArcGIS
-  system(command=glue('"{conda_path}" run -n working python',
+  system(command=glue('"{conda_path}" run -n working python ',
                       '"functions\\4b\ -\ empirical\ Bayesian\ kriging.py" ',
-                      '"{args[1]}" {args[2]} "{args[3]}"',
+                      '"{args[1]}" {args[2]} "{args[3]}" ',
                       '"{args[4]}" "{args[5]}" {args[6]}'))
   # load kriging result
   EBK_result <- 
@@ -153,7 +160,12 @@ if(arcgis) {
              filter(level==1) %>% .$geometry) %>% 
     st_as_sf() %>% 
     # bind result to full hbin set
-    bind_rows(dataset$hbins_estD %>% filter(level > 1))
+    bind_rows(dataset$hbins_estD %>% filter(level > 1)) %>% 
+    dplyr::mutate(estD = Predicted)
+  
+  # save EBK result
+  EBK_result %>% st_write(file.path(output_dir, "geojson", "EBK_result.geojson"))
+  write_arcgis(file.path(gdb, run_id, glue("{run_id}_EBK_result")), EBK_result)
 }
 
 ### 5 - Compute scale variance ###
@@ -162,7 +174,7 @@ source("functions/5 - compute scale variance.R")
 # observed locations result
 sv_OBS <- compute_scale_variance(
   dataset$hbins_estD %>% 
-  dplyr::mutate(estD = replace(estD, nLists >= 5, NA)),
+  dplyr::mutate(estD = replace(estD, nLists < 5, NA)),
   dataset$hbins
 )
 sv_OBS %>% saveRDS(file.path(output_dir, "sv_OBS.rds"))
@@ -177,8 +189,7 @@ sv_OK %>% saveRDS(file.path(output_dir, "sv_OK.rds"))
 # empirical Bayesian kriging result
 if(arcgis) {
   sv_EBK <- compute_scale_variance(
-    EBK_result %>% 
-    dplyr::mutate(estD = Predicted),
+    EBK_result, 
     dataset$hbins
   )
   sv_EBK %>% saveRDS(file.path(output_dir, "sv_EBK.rds"))
@@ -196,7 +207,17 @@ write_sve <- function(level, sve) {
 # export scale variance elements for each level
 1:run_levels %>% map(\(l) write_sve(level=l, sve=sv_OBS$sve))
 
-# explore scale variance components
+# export scale variance components
 sv_OBS$svc %>% write_csv(file.path(output_dir, "svc_OBS.csv"))
 sv_OK$svc %>% write_csv(file.path(output_dir, "svc_OK.csv"))
 sv_EBK$svc %>% write_csv(file.path(output_dir, "svc_EBK.csv"))
+
+# export estimated values for all levels
+sv_OBS$estD_values %>% st_write(file.path(output_dir, "geojson", "OBS_estD_values.geojson"))
+sv_OK$estD_values %>% st_write(file.path(output_dir, "geojson", "OK_estD_values.geojson"))
+sv_EBK$estD_values %>% st_write(file.path(output_dir, "geojson", "EBK_estD_values.geojson"))
+if (arcgis) {
+  write_arcgis(file.path(gdb, run_id, glue("{run_id}_OBS_values")), sv_OBS$estD_values)
+  write_arcgis(file.path(gdb, run_id, glue("{run_id}_OK_values")), sv_OK$estD_values)
+  write_arcgis(file.path(gdb, run_id, glue("{run_id}_EBK_values")), sv_EBK$estD_values)
+}
