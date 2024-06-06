@@ -12,7 +12,6 @@ join_hbins <- function(hbins, obs) {
   obs_aoi <- st_filter(obs, hbins)
   
   # join hbin ID to every observation for each hbin level
-  # TODO: parallelize with furrr and add progress indicator
   levels = unique(hbins$level)
   for (l in levels) {
     obs_aoi <- obs_aoi %>% 

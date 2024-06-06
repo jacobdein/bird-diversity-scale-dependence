@@ -1,8 +1,7 @@
 """
-Predicts values over an area with observed values using Empirical Bayesian kriging as implemented in ArcGIS
+Predicts values over an area with observed values using Empirical Bayesian 
+kriging as implemented in ArcGIS
 
-Jacob Dein
-September 2023
 """
 
 import argparse

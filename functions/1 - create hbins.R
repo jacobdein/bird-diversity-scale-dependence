@@ -7,7 +7,7 @@ library(glue)
 
 create_hbins <- function(aoi, max_size, nlevels) {
   
-  # project AOI to web meractor
+  # project AOI to web Mercator
   aoi <- st_read(aoi)
   aoi <- st_transform(aoi, 3857)
   
