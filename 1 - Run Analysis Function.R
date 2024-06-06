@@ -36,8 +36,7 @@ run_analysis <- function(run_id, run_start_scale_m, run_levels) {
   arcgis <- TRUE
   if(arcgis) {
     source("./utilities/arcgis.R")
-    gdb <- file.path("C:\\Users\\jddein\\OneDrive - University of Tennessee",
-                     "dissertation\\part 1\\ArcGIS\\Dissertation - Part 1.gdb")
+    gdb <- file.path("..\\results\\ArcGIS\\scale_variance.gdb")
     conda_path <- "C:\\Program Files\\ArcGIS\\Pro\\bin\\Python\\Scripts\\conda"
     dir.create(file.path(output_dir, "arcgis"))
   }

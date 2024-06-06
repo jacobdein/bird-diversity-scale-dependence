@@ -1,5 +1,6 @@
 Package,Version,Notes
 arcgisbinding,1.0.1.306,optional
+auk,0.7.0,
 dplyr,1.1.4,
 ggplot2,3.5.0,
 ggpubr,0.6.0,
